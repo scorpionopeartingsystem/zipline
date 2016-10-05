@@ -24,14 +24,16 @@ from zipline.pipeline.loaders.blaze.estimates import (
     BlazePreviousEstimatesLoader
 )
 from zipline.pipeline.loaders.earnings_estimates import (
+    EFFECTIVE_DATE_FIELD_NAME,
     INVALID_NUM_QTRS_MESSAGE,
     NextEarningsEstimatesLoader,
     normalize_quarters,
     PreviousEarningsEstimatesLoader,
+    RATIO_FIELD_NAME,
     split_normalized_quarters,
 )
 from zipline.testing.fixtures import (
-    WithAdjustmentReader,
+    WithAssetFinder,
     WithTradingSessions,
     ZiplineTestCase,
 )
@@ -60,7 +62,7 @@ def QuartersEstimatesNoNumQuartersAttr(num_qtr):
     return QtrEstimates
 
 
-class WithEstimates(WithTradingSessions, WithAdjustmentReader):
+class WithEstimates(WithTradingSessions, WithAssetFinder):
     """
     ZiplineTestCase mixin providing cls.loader and cls.events as class
     level fixtures.
@@ -1098,25 +1100,30 @@ class WithSplitAdjustedWindows(WithEstimateWindows):
             SID_FIELD_NAME: (0, 0, 0, 0, 0,
                              1, 1, 1, 1, 1,
                              2, 2, 2, 2, 2),
-            'ratio': (2., 3., 4., 5., 6.,
-                      .2, .3, .4, .5, .6,
-                      7., 8., 9., 10., 11.),
-            'effective_date': (pd.Timestamp('2015-01-07'),
-                               pd.Timestamp('2015-01-10'),
-                               pd.Timestamp('2015-01-13'),
-                               pd.Timestamp('2015-01-15'),
-                               pd.Timestamp('2015-01-18'),
-                               pd.Timestamp('2015-01-13'),
-                               pd.Timestamp('2015-01-15'),
-                               pd.Timestamp('2015-01-16'),
-                               pd.Timestamp('2015-01-18'),
-                               pd.Timestamp('2015-01-20'),
-                               pd.Timestamp('2015-01-07'),
-                               pd.Timestamp('2015-01-10'),
-                               pd.Timestamp('2015-01-13'),
-                               pd.Timestamp('2015-01-15'),
-                               pd.Timestamp('2015-01-18'),),
+            RATIO_FIELD_NAME: (2., 3., 4., 5., 6.,
+                               .2, .3, .4, .5, .6,
+                               7., 8., 9., 10., 11.),
+            EFFECTIVE_DATE_FIELD_NAME: (pd.Timestamp('2015-01-07'),
+                                        pd.Timestamp('2015-01-10'),
+                                        pd.Timestamp('2015-01-13'),
+                                        pd.Timestamp('2015-01-15'),
+                                        pd.Timestamp('2015-01-18'),
+                                        pd.Timestamp('2015-01-13'),
+                                        pd.Timestamp('2015-01-15'),
+                                        pd.Timestamp('2015-01-16'),
+                                        pd.Timestamp('2015-01-18'),
+                                        pd.Timestamp('2015-01-20'),
+                                        pd.Timestamp('2015-01-07'),
+                                        pd.Timestamp('2015-01-10'),
+                                        pd.Timestamp('2015-01-13'),
+                                        pd.Timestamp('2015-01-15'),
+                                        pd.Timestamp('2015-01-18'),),
         })
+
+    @classmethod
+    def init_class_fixtures(cls):
+        cls.splits_data = cls.make_splits_data()
+        super(WithSplitAdjustedWindows, cls).init_class_fixtures()
 
 
 class PreviousWithSplitAdjustedWindows(WithSplitAdjustedWindows,
@@ -1126,7 +1133,7 @@ class PreviousWithSplitAdjustedWindows(WithSplitAdjustedWindows,
         return PreviousEarningsEstimatesLoader(
             events,
             columns,
-            split_adjustments=cls.adjustment_reader,
+            split_adjustments=cls.splits_data,
             split_adjusted_column_names=['estimate']
         )
 
@@ -1203,7 +1210,7 @@ class NextWithSplitAdjustedWindows(WithSplitAdjustedWindows, ZiplineTestCase):
         return NextEarningsEstimatesLoader(
             events,
             columns,
-            split_adjustments=cls.adjustment_reader,
+            split_adjustments=cls.splits_data,
             split_adjusted_column_names=['estimate'],
         )
 
@@ -1288,7 +1295,7 @@ class PreviousWithBulkSplitAdjustedWindows(WithSplitAdjustedWindows,
         return PreviousEarningsEstimatesLoader(
             events,
             columns,
-            split_adjustments=cls.adjustment_reader,
+            split_adjustments=cls.splits_data,
             split_adjusted_column_names=['estimate'],
             split_adjusted_asof=pd.Timestamp('2015-01-15'),
         )
@@ -1367,7 +1374,7 @@ class NextWithBulkSplitAdjustedWindows(WithSplitAdjustedWindows,
         return NextEarningsEstimatesLoader(
             events,
             columns,
-            split_adjustments=cls.adjustment_reader,
+            split_adjustments=cls.splits_data,
             split_adjusted_column_names=['estimate'],
             split_adjusted_asof=pd.Timestamp('2015-01-15'),
         )

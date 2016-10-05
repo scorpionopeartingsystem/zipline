@@ -29,7 +29,8 @@ from zipline.pipeline.loaders.utils import (
     last_in_date_group
 )
 
-
+RATIO_FIELD_NAME = 'ratio'
+EFFECTIVE_DATE_FIELD_NAME = 'effective_date'
 INVALID_NUM_QTRS_MESSAGE = "Passed invalid number of quarters %s; " \
                            "must pass a number of quarters >= 0"
 NEXT_FISCAL_QUARTER = 'next_fiscal_quarter'
@@ -288,7 +289,7 @@ class EarningsEstimatesLoader(PipelineLoader):
         sid_to_idx = dict(zip(assets, range(len(assets))))
         col_to_all_adjustments = defaultdict(dict)
         col_to_split_adjustments = {}
-        if self._split_adjustments:
+        if self._split_adjustments is not None:
             self.collect_split_adjustments(assets,
                                            dates,
                                            col_to_split_adjustments)
@@ -325,7 +326,7 @@ class EarningsEstimatesLoader(PipelineLoader):
 
         quarter_shifts.groupby(level=SID_FIELD_NAME).apply(collect_overwrites)
 
-        if self._split_adjustments:
+        if self._split_adjustments is not None:
             # Apply the remaining split adjustments.
             for column_name in self._split_adjusted_column_names:
                 for sid in col_to_split_adjustments[column_name]:
@@ -344,16 +345,16 @@ class EarningsEstimatesLoader(PipelineLoader):
             for sid in assets:
                 col_to_split_adjustments[column_name][sid] = defaultdict(list)
                 split_adjustments_for_sid =\
-                    self._split_adjustments.get_adjustments_for_sid(
-                        'splits', sid
-                    )
+                    self._split_adjustments[
+                        self._split_adjustments[SID_FIELD_NAME] == sid
+                    ].reset_index()
                 # Sort adjustments by timestamp
-                sorted(split_adjustments_for_sid, key=lambda adj: adj[0])
-                timestamps = np.array([adj[0]
-                                       for adj in split_adjustments_for_sid])
-                adjustments = np.array([adj[1]
-                                        for adj in split_adjustments_for_sid])
-                date_indexes = dates.searchsorted(timestamps)
+                split_adjustments_for_sid = split_adjustments_for_sid.sort(
+                    EFFECTIVE_DATE_FIELD_NAME
+                )
+                date_indexes = dates.searchsorted(
+                    split_adjustments_for_sid[EFFECTIVE_DATE_FIELD_NAME].values
+                )
                 sequential_adjustments_start_idx = 0
                 if self._split_adjusted_asof:
                     # Collect all adjustments in bulk up until the date on
@@ -362,8 +363,9 @@ class EarningsEstimatesLoader(PipelineLoader):
                     sequential_adjustments_start_idx = np.where(
                         date_indexes <= stop_index
                     )[0].max() + 1
-                    for adjustment \
-                            in adjustments[:sequential_adjustments_start_idx]:
+                    for _, adjustment in split_adjustments_for_sid.iloc[
+                        :sequential_adjustments_start_idx
+                    ].iterrows():
                         col_to_split_adjustments[
                             column_name
                         ][sid][0].append(
@@ -372,25 +374,24 @@ class EarningsEstimatesLoader(PipelineLoader):
                                 len(dates) - 1,
                                 sid,
                                 sid,
-                                1 / adjustment  # reverse the split ratio
+                                1 / adjustment[RATIO_FIELD_NAME]
                             )
                         )
                 # Add on any remaining adjustments.
-                for date_index, adjustment in zip(
-                        date_indexes[sequential_adjustments_start_idx:],
-                        adjustments[sequential_adjustments_start_idx:]
-                ):
+                for i, adjustment in split_adjustments_for_sid.iloc[
+                    sequential_adjustments_start_idx:
+                ].iterrows():
                     # Create all split adjustments based on how they occur in
                     # time.
                     col_to_split_adjustments[
                         column_name
-                    ][sid][date_index].append(
+                    ][sid][date_indexes[i]].append(
                         Float64Multiply(
                             0,
                             len(dates) - 1,
                             sid,
                             sid,
-                            1 / adjustment  # reverse the split ratio
+                            1 / adjustment[RATIO_FIELD_NAME]
                         )
                     )
 
@@ -646,7 +647,7 @@ class NextEarningsEstimatesLoader(EarningsEstimatesLoader):
                 sid,
             ].values[:next_qtr_start_idx],
         )]
-        if self._split_adjustments and column_name \
+        if self._split_adjustments is not None and column_name \
                 in self._split_adjusted_column_names:
             for ts in col_to_split_adjustments[column_name][sid]:
                 if ts < next_qtr_start_idx:
