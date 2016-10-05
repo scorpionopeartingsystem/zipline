@@ -1320,18 +1320,11 @@ class StringColumnTestCase(WithSeededRandomPipelineEngine,
 
 
 class PopulateInitialWorkspaceTestCase(WithConstantInputs, ZiplineTestCase):
-    def make_engine(self, populate_initial_workspace):
-        return SimplePipelineEngine(
-            lambda column: self.loader,
-            self.dates,
-            self.asset_finder,
-            populate_initial_workspace=populate_initial_workspace,
-        )
-
     def test_populate_default_workspace(self):
         column = USEquityPricing.low
         base_term = column.latest
-        term = base_term + 1
+        term = (base_term + 1).alias('term')
+        composed_term = term + 1
         column_value = self.constants[column]
         precomputed_value = -column_value
 
@@ -1346,22 +1339,34 @@ class PopulateInitialWorkspaceTestCase(WithConstantInputs, ZiplineTestCase):
                 full((len(dates), len(assets)), precomputed_value),
             )
 
+        def dispatcher(column):
+            if column is base_term:
+                # the base_term should never be loaded, its initial refcount
+                # should be zero
+                return ExplodingObject()
+            return self.loader
+
         # I resisted the urge to use ``make_engine`` as a decorator here
         # because Scott would have yelled at me.
-        engine = self.make_engine(populate_initial_workspace)
+        engine = SimplePipelineEngine(
+            lambda column: self.loader,
+            self.dates,
+            self.asset_finder,
+            populate_initial_workspace=populate_initial_workspace,
+        )
 
         results = engine.run_pipeline(
             Pipeline({
-                'term-in-initial-workspace': term,
-                'term-not-in-initial-workspace': base_term,
+                'term': term,
+                'composed_term': composed_term,
             }),
             self.dates[0],
             self.dates[-1],
         )
 
         self.assertTrue(
-            (results['term-in-initial-workspace'] == precomputed_value).all(),
+            (results['term'] == precomputed_value).all(),
         )
         self.assertTrue(
-            (results['term-not-in-initial-workspace'] == column_value).all(),
+            (results['composed_term'] == (precomputed_value + 1)).all(),
         )
